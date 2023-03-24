@@ -22,9 +22,9 @@ export const CreateNewAccount = async (req, res) => {
       user_id: user_id,
       chats: [],
     });
-    console.log(JSON.parse(newUser));
+    console.log(newUser);
 
-    // newUser.save();
+    newUser.save();
     res.send(newUser);
   } catch (err) {
     console.log(err);
