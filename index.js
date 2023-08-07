@@ -6,11 +6,15 @@ import { fileURLToPath } from "url";
 import path from "path";
 import ChatModal from "./modals/chatSchema.js";
 import mongoose from "mongoose";
-import route from "./routes/login.js";
 import bodyParser from "body-parser";
 import cors from "cors";
+import user from "./routes/user.js";
+import auth from "./routes/login.js";
+import { instrument } from "@socket.io/admin-ui";
+import UserModal from "./modals/chatSchema.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let ActiveUserid;
 
 const app = express();
 app.use(express.json());
@@ -20,54 +24,164 @@ const httpServer = http.createServer(app);
 
 // request data
 app.get("/", (req, res) => {
-  res.send("hello world!");
+  // res.sendFile(__dirname + "./index.html");
+  res.sendFile("hello world!");
 });
-app.use("/authentication", route);
+app.use("/authentication", auth);
+app.use("/user", user);
 
 // socket connections
-const chatSocket = new Server(httpServer);
+const chatSocket = new Server(httpServer, {
+  cors: {
+    origin: ["https://admin.socket.io"],
+    credentials: true,
+  },
+});
 
 chatSocket.on("connection", async (socket) => {
-  console.log("a user connected", socket.id);
-
-  // new user connected
-  socket.on("new user login", async (message) => {
-    // console.log("a user logged in", message);
-    const user_data = message;
-    const new_user = await ChatModal({
-      ...user_data,
-      _id: new mongoose.Types.ObjectId(),
-      clientId: socket.id,
-    });
-    new_user.save();
-    // send  greetings to new user
-    socket.emit("welcome user", {
-      socket_id: socket.id,
-      message: `welcome ${user_data.name}`,
-    });
-    // Send a message to all connected clients about new user information
-    socket.broadcast.emit(
-      "welcome to user",
-      "A new user has joined the chat room!"
+  socket.on("connection established", async (userId, callback) => {
+    console.log("connection established with user id:", userId);
+    const socketId = socket.id;
+    let userObject = await UserModal.updateOne(
+      { _id: userId },
+      { $set: { socketId } }
     );
-    // all user information
-    try {
-      const all_users = await ChatModal.find();
-      socket.broadcast.emit("all user information", all_users);
-    } catch (error) {
-      console.log(error);
+    ActiveUserid = userId;
+    socket.emit("newUser");
+    callback(socketId);
+  });
+  socket.on("reconnectMe", async (_id) => {
+    console.log("reconnecting with", _id._j);
+    let data = await UserModal.updateOne(
+      {
+        _id: _id._j,
+      },
+      {
+        $set: { socketId: socket.id },
+      }
+    );
+    socket.emit("newUser");
+    console.log("data", data);
+  });
+  socket.on("disconnectMe", async () => {
+    console.log(`Disconnecting client with ID ${socket.id}-and `);
+    let data = await UserModal.updateOne(
+      {
+        socketId: socket.id,
+      },
+      {
+        $set: { socketId: "" },
+      }
+    );
+    console.log("data", data);
+  });
+  socket.on("sendMessage", async (targetId, { _j }, message) => {
+    let current = _j;
+    let targetUser = await UserModal.findById(targetId);
+    if (!targetUser) return;
+    let _id = new mongoose.Types.ObjectId(current._id);
+    let mydata = await UserModal.find({
+      _id: _id,
+    });
+    let isIchatWithOtherUser = mydata[0]?.chats?.filter(
+      (item) => item.chatFrom === targetId
+    );
+    if (isIchatWithOtherUser.length == 0) {
+      // first time chatting let start chat from here
+      // my side chatdata add
+      let mySideChatData = await UserModal.updateOne(
+        {
+          _id: current._id,
+        },
+        {
+          $push: {
+            chats: {
+              chatFrom: targetId,
+              chatTo: current._id,
+              data: [
+                {
+                  key: current,
+                  value: message,
+                },
+              ],
+            },
+          },
+        }
+      );
+
+      // //  target side chat data
+      let targetSideChatData = await UserModal.updateOne(
+        {
+          _id: targetId,
+        },
+        {
+          $push: {
+            chats: {
+              chatFrom: current._id,
+              chatTo: targetId,
+              data: [
+                {
+                  key: current,
+                  value: message,
+                },
+              ],
+            },
+          },
+        }
+      );
+    } else {
+      let mySideChatData = await UserModal.updateOne(
+        {
+          _id: current._id,
+          chats: {
+            $elemMatch: { chatFrom: targetId, chatTo: current._id },
+          },
+        },
+        {
+          $push: {
+            "chats.$.data": {
+              key: current._id,
+              value: message,
+            },
+          },
+        }
+      );
+      let targetSideChatData = await UserModal.updateOne(
+        {
+          _id: targetId,
+          chats: {
+            $elemMatch: { chatFrom: current._id, chatTo: targetId },
+          },
+        },
+        {
+          $push: {
+            "chats.$.data": {
+              key: current._id,
+              value: message,
+            },
+          },
+        }
+      );
     }
+    console.log(mydata[0].socketId);
+
+    new Promise((res) => {
+      res(mydata[0].socketId);
+    }).then((myid) => {
+      socket.to(targetUser.socketId).to(myid).emit("getMessage", message);
+    });
   });
 
-  // send message
-
-  socket.on("sendMessage", (message) => {
-    console.log("message", message);
+  socket.on("disconnect", async (id) => {
+    console.log("user disconnected", id);
   });
+});
 
-  socket.on("disconnect", () => {
-    console.log("user disconnected");
-  });
+instrument(chatSocket, {
+  auth: false,
+  type: "basic",
+  username: "admin",
+  password: "admin",
 });
 dbConnect().then((res) => {
   httpServer.listen(3000, () => {

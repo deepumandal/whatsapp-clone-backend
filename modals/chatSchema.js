@@ -14,6 +14,10 @@ const UserSchema = new mongoose.Schema(
       type: String,
       require: true,
     },
+    socketId: {
+      type: String,
+      default: "",
+    },
     avatar_url: {
       type: String,
       // require: true,
@@ -24,13 +28,14 @@ const UserSchema = new mongoose.Schema(
     },
     chats: [
       {
+
         chatFrom: {
-          type: mongoose.Schema.Types.ObjectId,
+          type: String,
           ref: "User",
           // require: true,
         },
         chatTo: {
-          type: mongoose.Schema.Types.ObjectId,
+          type: String,
           // require: true,
         },
         data: [

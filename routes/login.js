@@ -1,10 +1,15 @@
 import express from "express";
-import { getroute, CreateNewAccount } from "../controller/authController.js";
+import {
+  getroute,
+  CreateNewAccount,
+  DeleteNewAccount,
+} from "../controller/authController.js";
 
-const route = express.Router();
+const auth = express.Router();
 
-route.get("/", getroute);
+auth.get("/", getroute);
 
-route.post("/newuser", CreateNewAccount);
+auth.post("/newuser", CreateNewAccount);
+auth.get("/delete", DeleteNewAccount);
 
-export default route;
+export default auth;

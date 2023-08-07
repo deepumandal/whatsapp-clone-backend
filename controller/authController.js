@@ -9,12 +9,10 @@ export const CreateNewAccount = async (req, res) => {
   try {
     const { user_id, name, avatar_url } = req.body;
 
-    let isUniqueId = await UserModal.find({ user_id });
+    const isUserExist = await UserModal.findOne({ user_id });
 
-    if (isUniqueId.length) {
-      res.status(402).send({
-        message: "User id is already used by another user",
-      });
+    if (isUserExist) {
+      return res.send(isUserExist);
     }
     const newUser = await UserModal({
       name: name,
@@ -22,12 +20,12 @@ export const CreateNewAccount = async (req, res) => {
       user_id: user_id,
       chats: [],
     });
-    console.log(newUser);
 
     newUser.save();
-    res.send(newUser);
+    return res.send(newUser);
   } catch (err) {
     console.log(err);
-    res.send("error: " + err.message);
+    return res.send("error: " + err.message, err);
   }
 };
+export const DeleteNewAccount = (req, res) => {};
